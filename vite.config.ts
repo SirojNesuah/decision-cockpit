@@ -28,11 +28,12 @@ function localWorkspaceBridge() {
         }
 
         if (req.method === 'GET' && req.url === '/api/local/status') {
+          const exportDirectory = getLocalExportDirectory()
           sendJson(res, 200, {
             available: true,
             platform: process.platform,
             workspaceRoot: process.cwd(),
-            exportDirectory: path.join(process.cwd(), localExportDirectoryName),
+            exportDirectory,
             macOpenSupported: process.platform === 'darwin',
           })
           return
@@ -41,7 +42,7 @@ function localWorkspaceBridge() {
         if (req.method === 'POST' && req.url === '/api/local/export') {
           const body = await readJsonBody(req)
           const safeFileName = sanitizeFileName(String(body.fileName || 'decision-cockpit.json'))
-          const targetDirectory = path.join(process.cwd(), localExportDirectoryName)
+          const targetDirectory = getLocalExportDirectory()
           const targetPath = path.join(targetDirectory, safeFileName)
           await mkdir(targetDirectory, { recursive: true })
           await writeFile(targetPath, JSON.stringify(body.payload ?? {}, null, 2), 'utf8')
@@ -51,10 +52,10 @@ function localWorkspaceBridge() {
 
         if (req.method === 'POST' && req.url === '/api/local/open') {
           const body = await readJsonBody(req)
-          const filePath = String(body.filePath || '')
+          const filePath = resolveWorkspaceExportFilePath(String(body.filePath || ''))
           const mode = body.mode === 'inspect' ? 'inspect' : 'reveal'
 
-          if (!filePath.startsWith(path.join(process.cwd(), localExportDirectoryName))) {
+          if (!filePath) {
             sendJson(res, 400, { ok: false, error: 'Refusing to open a path outside the workspace export directory.' })
             return
           }
@@ -88,6 +89,30 @@ function localWorkspaceBridge() {
 function sanitizeFileName(fileName: string) {
   const baseName = path.basename(fileName).replace(/[^a-zA-Z0-9._-]+/g, '-')
   return baseName.endsWith('.json') ? baseName : `${baseName}.json`
+}
+
+function getLocalExportDirectory() {
+  return path.resolve(process.cwd(), localExportDirectoryName)
+}
+
+function resolveWorkspaceExportFilePath(filePath: string) {
+  if (!filePath) {
+    return null
+  }
+
+  const exportDirectory = getLocalExportDirectory()
+  const candidatePath = path.resolve(filePath)
+  const relativePath = path.relative(exportDirectory, candidatePath)
+
+  if (
+    relativePath.startsWith('..') ||
+    path.isAbsolute(relativePath) ||
+    relativePath === ''
+  ) {
+    return null
+  }
+
+  return candidatePath
 }
 
 function sendJson(

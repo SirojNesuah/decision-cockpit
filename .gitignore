@@ -11,6 +11,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.decision-cockpit/
 
 # Editor directories and files
 .vscode/*
